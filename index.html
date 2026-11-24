@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Good Luck Clover</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; background: #000; overflow: hidden; }
+  body { display: flex; justify-content: center; }
+  #app {
+    width: min(100vw, 520px);
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  #stage { position: relative; flex: 1 1 62%; min-height: 0; }
+  canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    filter: drop-shadow(0 0 7px rgba(70, 255, 140, .28));
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="stage"><canvas id="v" width="900" height="1000"></canvas></div>
+</div>
+<script>
+const W = 900, H = 1000, CX = 450, CY = 500;
+const LOOP = 15, TURN = 9.6, T = 56, N = 6, LH = 19, DIST = 900;
+
+const PHRASES = "Good luck|행운을 빌어|행운을 빌어요|幸運を祈る|祝你好运|祝你好運|Удачи|Удачі|Късмет|Срећно|Srećno|Sretno|Srečno|Среќно|Hodně štěstí|Veľa šťastia|Powodzenia|Sok szerencsét|Succes|Mult noroc|Viel Glück|Veel geluk|Vill Gléck|Held og lykke|Lykke til|Lycka till|Gangi þér vel|Onnea|Õnn kaasa|Veiksmi|Sėkmės|Bonne chance|Buena suerte|Boa sorte|Buona fortuna|Bona sort|Zorte on|Pob lwc|Ádh mór|Xorti tajba|Paç fat|Καλή τύχη|İyi şanslar|Bol şans|Uğurlar|Հաջողություն|Сәттілік тілеймін|Omad|Амжилт|בהצלחה|حظًا سعيدًا|موفق باشید|நல்ல அதிர்ஷ்டம்|ಶುಭವಾಗಲಿ|ਚੰਗੀ ਕਿਸਮਤ|সৌভাগ্য কামনা করি|โชคดี|Chúc may mắn|Semoga berhasil|Semoga berjaya|សំណាងល្អ|ໂຊກດີ|ကံကောင်းပါစေ|Bahati njema|Nasiib wanaagsan|Ngikufisela inhlanhla|Orire o|መልካም ዕድል|Bonŝancon|Bonam fortunam|Bon chans".split("|");
+
+const rng = seed => () => {
+  seed |= 0;
+  seed = seed + 0x6D2B79F5 | 0;
+  let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+  t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+  return ((t ^ t >>> 14) >>> 0) / 4294967296;
+};
+
+const makeCanvas = () => {
+  const c = document.createElement("canvas");
+  c.width = W;
+  c.height = H;
+  return c;
+};
+
+const SCALE = 12, GAP = 6, leaf = new Path2D();
+for (const deg of [45, 135, 225, 315]) {
+  const a = deg * Math.PI / 180, dx = Math.cos(a), dy = Math.sin(a);
+  for (let i = 0; i <= 126; i++) {
+    const t = i / 126 * 2 * Math.PI;
+    const u = 16 * Math.pow(Math.sin(t), 3) * SCALE;
+    const v = (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t) + 17) * SCALE + GAP;
+    const x = CX + dx * v - dy * u, y = CY + dy * v + dx * u;
+    i ? leaf.lineTo(x, y) : leaf.moveTo(x, y);
+  }
+  leaf.closePath();
+}
+
+const mask = makeCanvas(), maskCtx = mask.getContext("2d");
+maskCtx.fillStyle = "#fff";
+maskCtx.fill(leaf);
+const maskData = maskCtx.getImageData(0, 0, W, H).data;
+const inside = (x, y) => x >= 0 && y >= 0 && x < W && y < H && maskData[((y | 0) * W + (x | 0)) * 4 + 3] > 40;
+
+const front = makeCanvas(), back = makeCanvas(), measure = front.getContext("2d");
+
+function layout(seed) {
+  const r = rng(seed), items = [];
+  for (let y = 36; y < H - 10; y += LH) {
+    let x = -r() * 70;
+    while (x < W) {
+      const text = PHRASES[r() * PHRASES.length | 0];
+      const size = LH * (.78 + r() * .25);
+      const font = (r() < .4 ? "600 " : "") + size.toFixed(1) + 'px "Segoe UI","Noto Sans",sans-serif';
+      measure.font = font;
+      const w = measure.measureText(text).width;
+      if ([x + 2, x + w / 2, x + w - 2].some(px => inside(px, y - size * .3))) {
+        const pale = r() < .12;
+        items.push({
+          text, x, y, font,
+          delay: r() * 2.2,
+          color: pale ? "hsl(140,80%,88%)" : `hsl(${128 + r() * 22},${55 + r() * 40}%,${46 + r() * 38}%)`
+        });
+      }
+      x += w + 6 + r() * 8;
+    }
+  }
+  return items;
+}
+
+const frontItems = layout(7), backItems = layout(21);
+
+function paint(canvas, items, mirror, t) {
+  const g = canvas.getContext("2d");
+  g.clearRect(0, 0, W, H);
+  g.save();
+  if (mirror) { g.translate(W, 0); g.scale(-1, 1); }
+  for (const o of items) {
+    const alpha = Math.min(1, (t - o.delay) / .3);
+    if (alpha <= 0) continue;
+    g.globalAlpha = alpha;
+    g.font = o.font;
+    g.fillStyle = o.color;
+    g.fillText(o.text, o.x, o.y);
+  }
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = "destination-in";
+  g.drawImage(mask, 0, 0);
+  g.globalCompositeOperation = "source-over";
+  g.shadowColor = "#4dff90";
+  g.shadowBlur = 10;
+  g.strokeStyle = "rgba(120,255,170,.8)";
+  g.lineWidth = 2;
+  g.stroke(leaf);
+  g.restore();
+}
+
+const ctx = document.getElementById("v").getContext("2d");
+const t0 = performance.now();
+let last = 0, prev = Infinity, painted = false;
+
+function tick(now) {
+  requestAnimationFrame(tick);
+  if (now - last < 33) return;
+  last = now;
+
+  const lt = ((now - t0) / 1000) % LOOP;
+  if (lt < prev) painted = false;
+  prev = lt;
+
+  if (!painted) {
+    paint(front, frontItems, false, lt);
+    paint(back, backItems, true, lt);
+    if (lt > 2.6) painted = true;
+  }
+
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1;
+  ctx.clearRect(0, 0, W, H);
+
+  const th = 2 * Math.PI * lt / TURN, c = Math.cos(th), s = Math.sin(th);
+  const facing = c >= 0, tex = facing ? front : back;
+
+  for (let i = 0; i <= N; i++) {
+    const k = facing ? i : N - i, z = (k / N - .5) * T, isFace = i === N;
+    ctx.globalCompositeOperation = isFace ? "source-over" : "lighter";
+    ctx.globalAlpha = isFace ? 1 : .13;
+    for (let x = 0; x < W; x += 3) {
+      const X = (x - CX) * c + z * s;
+      const d = -(x - CX) * s + z * c;
+      const f = 1 / (1 - d / DIST);
+      ctx.drawImage(tex, x, 0, 3, H, CX + X * f, CY - CY * f, 3 * Math.abs(c) * f + .8, H * f);
+    }
+  }
+}
+
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>
